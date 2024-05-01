@@ -26,3 +26,7 @@ vs in a fragment shader:
   in [framebuffer coordinates](https://www.w3.org/TR/webgpu/#coordinate-systems) 
   of the pixel the fragment shader is currently being asked to compute the color for.
 
+TL/DR: 
+- `@builtin(position)` in vertex shader and fragment shader are unrelated: they
+are completely different variables.
+- for inter-stage variables, all that matters are the `@location(n)` annotated variables/struct fields.
