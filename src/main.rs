@@ -19,7 +19,7 @@ impl<'a> ApplicationHandler for App<'a> {
         let window = Arc::new(event_loop
                 .create_window(Window::default_attributes())
                 .unwrap());
-        let mut view = View::new(Arc::clone(&window));
+        let view = View::new(Arc::clone(&window));
         self.windows.insert(window.id(), (window, view));
     }
 

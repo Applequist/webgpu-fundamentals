@@ -82,9 +82,7 @@ impl<'a> State<'a> {
 
 
 pub struct View<'a> {
-    window: Arc<Window>,
     state: State<'a>,
-    shader: wgpu::ShaderModule,
     render_pipeline: RenderPipeline,
 }
 
@@ -129,9 +127,7 @@ impl<'a> View<'a> {
             multiview: None,
         });
         Self {
-            window,
             state,
-            shader,
             render_pipeline,
         }
     }
