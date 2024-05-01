@@ -7,11 +7,11 @@ use winit::{
     window::Window,
 };
 use winit::window::WindowId;
-use webgpu_fundamentals::State;
+use webgpu_fundamentals::{View};
 
 #[derive(Default)]
 pub struct App<'a> {
-    windows: HashMap<WindowId, (Arc<Window>, State<'a>)>,
+    windows: HashMap<WindowId, (Arc<Window>, View<'a>)>,
 }
 
 impl<'a> ApplicationHandler for App<'a> {
@@ -19,8 +19,8 @@ impl<'a> ApplicationHandler for App<'a> {
         let window = Arc::new(event_loop
                 .create_window(Window::default_attributes())
                 .unwrap());
-        let state = pollster::block_on(State::new(Arc::clone(&window)));
-        self.windows.insert(window.id(), (window, state));
+        let mut view = View::new(Arc::clone(&window));
+        self.windows.insert(window.id(), (window, view));
     }
 
     fn window_event(
@@ -29,21 +29,21 @@ impl<'a> ApplicationHandler for App<'a> {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        let (_window, state) = self.windows.get_mut(&window_id).unwrap();
+        let (_window, view) = self.windows.get_mut(&window_id).unwrap();
         match event {
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping...");
                 event_loop.exit();
             },
             WindowEvent::Resized(new_size) => {
-                state.resize(new_size);
+                view.resize(new_size);
             },
             WindowEvent::RedrawRequested => {
-                state.update();
-                match state.render() {
+                view.update();
+                match view.render() {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost) => {
-                        state.resize(state.size());
+                        view.resize(view.size());
                     },
                     Err(wgpu::SurfaceError::OutOfMemory) => {
                         eprintln!("Out of Memory Error: exiting...");

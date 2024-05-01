@@ -1,6 +1,6 @@
 use std::default::Default;
 use std::sync::Arc;
-use wgpu::{Device, DeviceDescriptor, InstanceDescriptor, PowerPreference, Queue, RequestAdapterOptions, Surface, SurfaceConfiguration};
+use wgpu::{Device, DeviceDescriptor, include_wgsl, InstanceDescriptor, PowerPreference, Queue, RenderPipeline, RequestAdapterOptions, Surface, SurfaceConfiguration};
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
 use winit::window::Window;
@@ -67,7 +67,7 @@ impl<'a> State<'a> {
     pub fn size(&self) -> PhysicalSize<u32> {
         self.size
     }
-    
+
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
@@ -77,22 +77,95 @@ impl<'a> State<'a> {
         }
     }
 
+
+}
+
+
+pub struct View<'a> {
+    window: Arc<Window>,
+    state: State<'a>,
+    shader: wgpu::ShaderModule,
+    render_pipeline: RenderPipeline,
+}
+
+impl<'a> View<'a> {
+    pub fn new(window: Arc<Window>) -> Self {
+        let state = pollster::block_on(State::new(Arc::clone(&window)));
+        let shader = state.device.create_shader_module(include_wgsl!("TriangleShader.wgsl"));
+        let render_pipeline = state.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: None,
+            vertex: wgpu::VertexState {
+                module: &shader,
+                compilation_options: Default::default(),
+                entry_point: "vs",
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                compilation_options: Default::default(),
+                entry_point: "fs",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: state.config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth :false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
+        Self {
+            window,
+            state,
+            shader,
+            render_pipeline,
+        }
+    }
+
+    pub fn size(&self) -> PhysicalSize<u32> {
+        self.state.size()
+    }
+
+    /// Reconfigure the [State] whenever the window has been resized.
+    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
+        self.state.resize(new_size);
+    }
+
+    /// Return a bool to indicate whether an event has been fully processed.
+    /// If the method returns `true`, the main event loop won't process the event any further.
     pub fn input(&mut self, _event: &WindowEvent) -> bool {
         false
     }
 
+    /// Give a chance to update the view content before rendering.
+    /// Don't do anything for now
     pub fn update(&mut self) {
         // TODO
     }
 
+    /// Render the content of the view.
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
+        let output = self.state.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        let mut encoder = self.state.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
         });
-        { 
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -111,12 +184,14 @@ impl<'a> State<'a> {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+            
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.draw(0..3, 0..1);
         }
-        
-        self.queue.submit(std::iter::once(encoder.finish()));
+
+        self.state.queue.submit(std::iter::once(encoder.finish()));
         output.present();
-        
+
         Ok(())
     }
-
 }
