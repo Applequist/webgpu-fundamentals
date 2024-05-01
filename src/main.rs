@@ -1,22 +1,26 @@
+use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
+use webgpu_fundamentals::State;
 
 #[derive(Default)]
-struct App {
-    window: Option<Window>,
+pub struct App<'a> {
+    window: Option<Arc<Window>>,
+    state: Option<State<'a>>,
 }
 
-impl ApplicationHandler for App {
+impl<'a> ApplicationHandler for App<'a> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        self.window = Some(
-            event_loop
+        let window = Arc::new(event_loop
                 .create_window(Window::default_attributes())
-                .unwrap(),
-        );
+                .unwrap());
+        let state = pollster::block_on(State::new(Arc::clone(&window)));
+        self.state = Some(state);
+        self.window = Some(window);
     }
 
     fn window_event(
