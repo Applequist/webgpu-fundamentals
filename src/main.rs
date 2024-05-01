@@ -26,8 +26,8 @@ impl<'a> ApplicationHandler for App<'a> {
     fn window_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        window_id: winit::window::WindowId,
-        event: winit::event::WindowEvent,
+        window_id: WindowId,
+        event: WindowEvent,
     ) {
         let (_window, state) = self.windows.get_mut(&window_id).unwrap();
         match event {
