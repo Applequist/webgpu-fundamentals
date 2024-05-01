@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
@@ -5,12 +6,12 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
+use winit::window::WindowId;
 use webgpu_fundamentals::State;
 
 #[derive(Default)]
 pub struct App<'a> {
-    window: Option<Arc<Window>>,
-    state: Option<State<'a>>,
+    windows: HashMap<WindowId, (Arc<Window>, State<'a>)>,
 }
 
 impl<'a> ApplicationHandler for App<'a> {
@@ -19,8 +20,7 @@ impl<'a> ApplicationHandler for App<'a> {
                 .create_window(Window::default_attributes())
                 .unwrap());
         let state = pollster::block_on(State::new(Arc::clone(&window)));
-        self.state = Some(state);
-        self.window = Some(window);
+        self.windows.insert(window.id(), (window, state));
     }
 
     fn window_event(
@@ -29,11 +29,29 @@ impl<'a> ApplicationHandler for App<'a> {
         window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
+        let (_window, state) = self.windows.get_mut(&window_id).unwrap();
         match event {
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping...");
                 event_loop.exit();
-            }
+            },
+            WindowEvent::Resized(new_size) => {
+                state.resize(new_size);
+            },
+            WindowEvent::RedrawRequested => {
+                state.update();
+                match state.render() {
+                    Ok(_) => {}
+                    Err(wgpu::SurfaceError::Lost) => {
+                        state.resize(state.size());
+                    },
+                    Err(wgpu::SurfaceError::OutOfMemory) => {
+                        eprintln!("Out of Memory Error: exiting...");
+                        event_loop.exit();
+                    },
+                    Err(e) => eprint!("{:?}", e),
+                }
+            },
             _ => (),
         }
     }
