@@ -1,6 +1,6 @@
 use std::default::Default;
 use std::sync::Arc;
-use wgpu::{Device, DeviceDescriptor, include_wgsl, InstanceDescriptor, PowerPreference, Queue, RenderPipeline, RequestAdapterOptions, Surface, SurfaceConfiguration};
+use wgpu::{BufferAddress, Device, DeviceDescriptor, include_wgsl, InstanceDescriptor, PowerPreference, Queue, RenderPipeline, RequestAdapterOptions, Surface, SurfaceConfiguration};
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
 use winit::window::Window;
@@ -42,7 +42,7 @@ impl<'a> State<'a> {
             .filter(|f| f.is_srgb())
             .next()
             .unwrap_or(surface_caps.formats[0]);
-        let config = wgpu::SurfaceConfiguration {
+        let config = SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: size.width,
@@ -80,9 +80,19 @@ impl<'a> State<'a> {
 
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct OurStruct {
+    pub color: [f32; 4],
+    pub scale: [f32; 2],
+    pub offset: [f32; 2],
+}
+
 
 pub struct View<'a> {
     state: State<'a>,
+    our_struct_buffer: wgpu::Buffer,
+    our_struct_bg: wgpu::BindGroup,
     render_pipeline: RenderPipeline,
 }
 
@@ -90,9 +100,30 @@ impl<'a> View<'a> {
     pub fn new(window: Arc<Window>) -> Self {
         let state = pollster::block_on(State::new(Arc::clone(&window)));
         let shader = state.device.create_shader_module(include_wgsl!("TriangleShader.wgsl"));
+        
+        let our_struct_bg_layout = state.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("OurStruct Bind Group Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let render_pipeline_layout = state.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Render Pipeline Layout"),
+            bind_group_layouts: &[&our_struct_bg_layout],
+            push_constant_ranges: &[],
+        });
+        
         let render_pipeline = state.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
-            layout: None,
+            layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 compilation_options: Default::default(),
@@ -126,8 +157,27 @@ impl<'a> View<'a> {
             },
             multiview: None,
         });
+        
+        let our_struct_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("OurStruct Uniform Buffer"),
+            size: std::mem::size_of::<OurStruct>() as BufferAddress,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let our_struct_bg = state.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("OurStruct Bind Group"),
+            layout: &render_pipeline.get_bind_group_layout(0),
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: our_struct_buffer.as_entire_binding(),
+            }],
+        });
+
         Self {
             state,
+            our_struct_buffer,
+            our_struct_bg,
             render_pipeline,
         }
     }
@@ -180,8 +230,19 @@ impl<'a> View<'a> {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+
+            let size = self.size();
+            let aspect = size.width as f32 / size.height as f32;
+            let our_struct = OurStruct {
+                color: [0.0, 1.0, 0.0, 1.0],
+                scale: [0.5 / aspect, 0.5],
+                offset: [-0.5, -0.25],
+            };
+            
+            self.state.queue.write_buffer(&self.our_struct_buffer, 0, bytemuck::cast_slice(&[our_struct]));
             
             render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_bind_group(0, &self.our_struct_bg, &[]);
             render_pass.draw(0..3, 0..1);
         }
 

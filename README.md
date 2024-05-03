@@ -1,6 +1,9 @@
 # WebGPU Fundamentals
 
-See [there](https://webgpufundamentals.org) for the material.
+IMPORTANT: The following are **verbatim** notes taken from the [WebGPU Fundamentals](https://webgpufundamentals.org)
+websites for quick access. 
+All credits are theirs.
+Please head [there](https://webgpufundamentals.org) for the complete material.
 
 ## Fundamentals
 
@@ -30,3 +33,8 @@ TL/DR:
 - `@builtin(position)` in vertex shader and fragment shader are unrelated: they
 are completely different variables.
 - for inter-stage variables, all that matters are the `@location(n)` annotated variables/struct fields.
+
+## Uniforms
+
+Uniforms are kinda like global variables for your shaders: you set their values
+before you execute the shader and they'll have those values for every iteration of the shader.
