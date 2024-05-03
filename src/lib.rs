@@ -1,6 +1,6 @@
 use std::default::Default;
 use std::sync::Arc;
-use wgpu::{BufferAddress, Device, DeviceDescriptor, include_wgsl, InstanceDescriptor, PowerPreference, Queue, RenderPipeline, RequestAdapterOptions, Surface, SurfaceConfiguration};
+use wgpu::{Buffer, BufferAddress, Device, DeviceDescriptor, include_wgsl, InstanceDescriptor, PowerPreference, Queue, RenderPipeline, RequestAdapterOptions, Surface, SurfaceConfiguration};
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
 use winit::window::Window;
@@ -84,15 +84,19 @@ impl<'a> State<'a> {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct OurStruct {
     pub color: [f32; 4],
-    pub scale: [f32; 2],
     pub offset: [f32; 2],
+    pub scale: [f32; 2],
 }
 
+struct ObjecteInfo {
+    pub values: OurStruct,
+    pub buffer: Buffer,
+    pub bind_group: wgpu::BindGroup,
+}
 
 pub struct View<'a> {
     state: State<'a>,
-    our_struct_buffer: wgpu::Buffer,
-    our_struct_bg: wgpu::BindGroup,
+    object_infos: Vec<ObjecteInfo>,
     render_pipeline: RenderPipeline,
 }
 
@@ -158,26 +162,42 @@ impl<'a> View<'a> {
             multiview: None,
         });
         
-        let our_struct_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("OurStruct Uniform Buffer"),
-            size: std::mem::size_of::<OurStruct>() as BufferAddress,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let mut object_infos = vec![];
+        for i in 0..100 {
+            let scale = rand(0.2, 0.5);
+            let values = OurStruct {
+                color: [rand(0., 1.), rand(0., 1.), rand(0., 1.), 1.0],
+                offset: [rand(-0.9, 0.9), rand(-0.9, 0.9)],
+                scale: [scale, scale],
+                
+            };
+            let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(&format!("OurStruct Uniform Buffer[{i}]")),
+                size: std::mem::size_of::<OurStruct>() as BufferAddress,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
 
-        let our_struct_bg = state.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("OurStruct Bind Group"),
-            layout: &render_pipeline.get_bind_group_layout(0),
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: our_struct_buffer.as_entire_binding(),
-            }],
-        });
+            let bind_group = state.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(&format!("OurStruct Bind Group[{i}]")),
+                layout: &render_pipeline.get_bind_group_layout(0),
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            });
+            
+            object_infos.push(ObjecteInfo {
+                values,
+                buffer,
+                bind_group,
+            });
+        }
+
 
         Self {
             state,
-            our_struct_buffer,
-            our_struct_bg,
+            object_infos,
             render_pipeline,
         }
     }
@@ -231,19 +251,20 @@ impl<'a> View<'a> {
                 timestamp_writes: None,
             });
 
+            render_pass.set_pipeline(&self.render_pipeline);
+            
             let size = self.size();
             let aspect = size.width as f32 / size.height as f32;
-            let our_struct = OurStruct {
-                color: [0.0, 1.0, 0.0, 1.0],
-                scale: [0.5 / aspect, 0.5],
-                offset: [-0.5, -0.25],
-            };
+            for obj in &mut self.object_infos {
+                let [sx, sy] = obj.values.scale;
+                obj.values.scale = [sx / aspect, sy];
+
+                self.state.queue.write_buffer(&obj.buffer, 0, bytemuck::cast_slice(&[obj.values]));
+
+                render_pass.set_bind_group(0, &obj.bind_group, &[]);
+                render_pass.draw(0..3, 0..1);
+            }
             
-            self.state.queue.write_buffer(&self.our_struct_buffer, 0, bytemuck::cast_slice(&[our_struct]));
-            
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.our_struct_bg, &[]);
-            render_pass.draw(0..3, 0..1);
         }
 
         self.state.queue.submit(std::iter::once(encoder.finish()));
@@ -251,4 +272,8 @@ impl<'a> View<'a> {
 
         Ok(())
     }
+}
+
+fn rand(min: f32, max: f32) -> f32 {
+    min + rand::random::<f32>() * (max - min)
 }
