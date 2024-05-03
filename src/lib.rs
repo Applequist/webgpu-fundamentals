@@ -85,18 +85,17 @@ impl<'a> State<'a> {
 struct OurStruct {
     pub color: [f32; 4],
     pub offset: [f32; 2],
-    pub scale: [f32; 2],
 }
 
-struct ObjecteInfo {
-    pub values: OurStruct,
+struct ObjectInfo {
+    pub scale: f32,
     pub buffer: Buffer,
     pub bind_group: wgpu::BindGroup,
 }
 
 pub struct View<'a> {
     state: State<'a>,
-    object_infos: Vec<ObjecteInfo>,
+    object_infos: Vec<ObjectInfo>,
     render_pipeline: RenderPipeline,
 }
 
@@ -110,6 +109,15 @@ impl<'a> View<'a> {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }, wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::VERTEX,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -161,19 +169,26 @@ impl<'a> View<'a> {
             },
             multiview: None,
         });
-        
+
         let mut object_infos = vec![];
         for i in 0..100 {
-            let scale = rand(0.2, 0.5);
             let values = OurStruct {
                 color: [rand(0., 1.), rand(0., 1.), rand(0., 1.), 1.0],
                 offset: [rand(-0.9, 0.9), rand(-0.9, 0.9)],
-                scale: [scale, scale],
-                
             };
-            let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(&format!("OurStruct Uniform Buffer[{i}]")),
+
+            let static_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(&format!("Static uniform buffer[{i}]")),
                 size: std::mem::size_of::<OurStruct>() as BufferAddress,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            state.queue.write_buffer(&static_buffer, 0, bytemuck::cast_slice(&[values]));
+
+            let scale = rand(0.2, 0.5);
+            let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(&format!("Dynamic uniform buffer[{i}]")),
+                size: std::mem::size_of::<[f32; 2]>() as BufferAddress,
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
@@ -181,14 +196,20 @@ impl<'a> View<'a> {
             let bind_group = state.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some(&format!("OurStruct Bind Group[{i}]")),
                 layout: &render_pipeline.get_bind_group_layout(0),
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.as_entire_binding(),
-                }],
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: static_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1, 
+                        resource: buffer.as_entire_binding()
+                    }
+                ],
             });
-            
-            object_infos.push(ObjecteInfo {
-                values,
+
+            object_infos.push(ObjectInfo {
+                scale,
                 buffer,
                 bind_group,
             });
@@ -252,19 +273,19 @@ impl<'a> View<'a> {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            
+
             let size = self.size();
             let aspect = size.width as f32 / size.height as f32;
             for obj in &mut self.object_infos {
-                let [sx, sy] = obj.values.scale;
-                obj.values.scale = [sx / aspect, sy];
+                let s = obj.scale;
+                let scales = [s / aspect, s];
 
-                self.state.queue.write_buffer(&obj.buffer, 0, bytemuck::cast_slice(&[obj.values]));
+                self.state.queue.write_buffer(&obj.buffer, 0, bytemuck::cast_slice(&[scales]));
 
                 render_pass.set_bind_group(0, &obj.bind_group, &[]);
                 render_pass.draw(0..3, 0..1);
             }
-            
+
         }
 
         self.state.queue.submit(std::iter::once(encoder.finish()));
