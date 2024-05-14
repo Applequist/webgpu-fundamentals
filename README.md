@@ -38,3 +38,17 @@ are completely different variables.
 
 Uniforms are kinda like global variables for your shaders: you set their values
 before you execute the shader and they'll have those values for every iteration of the shader.
+
+We start with 1 buffer with one object (color, scale and offset) per shape (part1).
+
+In part 2, we draw multiple shapes. We create 1 bind group with 1 buffer containing 1 object (color, scale and offset) per shape.
+During rendering, for each object, we update the corresponding buffer, set the bind group on the render pass, 
+and issue a draw call. Then submit the command buffer.
+
+In part 3, we split the buffer into 2 uniform buffers per object to draw: one static one containing values
+computing before rendering, and a dynamic one whose value are computed at render time.
+
+When splitting our buffer, we run into a memory alignment issue for the first time, that is solved 
+by adding padding.
+- [webgpu memory layout](https://webgpufundamentals.org/webgpu/lessons/webgpu-memory-layout.html)
+- [webgup alignment and size spec](https://www.w3.org/TR/WGSL/#alignment-and-size)
