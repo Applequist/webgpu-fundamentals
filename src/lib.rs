@@ -85,6 +85,10 @@ impl<'a> State<'a> {
 struct OurStruct {
     pub color: [f32; 4],
     pub offset: [f32; 2],
+    // this is required to avoid the following error:
+    // 'Buffer is bound with size 24 where the shader expects 32 in group[0] compact index 0'
+    // See https://sotrh.github.io/learn-wgpu/showcase/alignment/#alignment-of-uniform-and-storage-buffers
+    pub padding: [f32; 2],
 }
 
 struct ObjectInfo {
@@ -175,6 +179,7 @@ impl<'a> View<'a> {
             let values = OurStruct {
                 color: [rand(0., 1.), rand(0., 1.), rand(0., 1.), 1.0],
                 offset: [rand(-0.9, 0.9), rand(-0.9, 0.9)],
+                padding: [0.0; 2],
             };
 
             let static_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
