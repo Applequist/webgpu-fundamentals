@@ -1,24 +1,37 @@
-struct OurStruct {
+struct ColorOffset {
     color: vec4f,
     offset: vec2f,
 };
 
-struct OtherStruct {
-    scale: vec2f,
+struct Scales {
+    scales: vec2f,
 };
 
-@group(0) @binding(0) var<storage, read> ourStruct: OurStruct;
-@group(0) @binding(1) var<storage, read> otherStruct: OtherStruct;
+@group(0) @binding(0) var<storage, read> color_offsets: array<ColorOffset>;
+@group(0) @binding(1) var<storage, read> scales: array<Scales>;
+
+struct VSOutput {
+    @builtin(position) position: vec4f,
+    @location(0) color: vec4f,
+}
 
 @vertex
-fn vs(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4f {
+fn vs(@builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VSOutput {
     let x = f32(1 - i32(vertex_index)) * 0.5;
     let y = f32(i32(vertex_index & 1u) * 2 - 1) * 0.5;
     let position = vec2f(x, y);
-    return vec4f(position * otherStruct.scale + ourStruct.offset, 0.0, 1.0);
+
+    let scales = scales[instance_index];
+    let color_offset = color_offsets[instance_index];
+
+    var vs_out: VSOutput;
+    vs_out.position = vec4f(position * scales.scales + color_offset.offset, 0.0, 1.0);
+    vs_out.color = color_offset.color;
+
+    return vs_out;
 }
 
 @fragment
-fn fs() -> @location(0) vec4f {
-    return ourStruct.color;
+fn fs(vs_out: VSOutput) -> @location(0) vec4f {
+    return vs_out.color;
 }

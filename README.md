@@ -58,9 +58,14 @@ by adding padding.
 In part 1 we simply change our uniform buffers into storage buffer, and see that it just works the same.
 
 So what's the difference ? And why we need these 2 types of buffers ?
-- Uniform buffers can be faster for their typical use-case, i.e. passing properties to draw the same objects.
+- Uniform buffers can be faster for their typical use-case, i.e. passing properties for an object,
 - Storage buffers can be much bigger (uniform min max size is 64k, storage buffer min max size is 128m)
 - Storage buffers can be read/write, uniform buffers are read only.
 
+In part 2, we explore *instancing* with storage buffers.
+We create one storage buffer to store a color and the offset of each triangle *instance*, and another buffer
+to store the scales (x and y). This last buffer is fill in at render time.
 
+Also we issue a **single** draw call (with 100 instance) instead of 100 draw calls with a single instance in 
+uniform case (uniform part 3).
 

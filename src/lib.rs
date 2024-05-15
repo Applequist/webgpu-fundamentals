@@ -1,6 +1,6 @@
 use std::default::Default;
 use std::sync::Arc;
-use wgpu::{Buffer, BufferAddress, Device, DeviceDescriptor, include_wgsl, InstanceDescriptor, PowerPreference, Queue, RenderPipeline, RequestAdapterOptions, Surface, SurfaceConfiguration};
+use wgpu::{BindGroup, Buffer, BufferAddress, Device, DeviceDescriptor, include_wgsl, InstanceDescriptor, PowerPreference, Queue, RenderPipeline, RequestAdapterOptions, Surface, SurfaceConfiguration};
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
 use winit::window::Window;
@@ -82,7 +82,7 @@ impl<'a> State<'a> {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct OurStruct {
+struct ColorOffset {
     pub color: [f32; 4],
     pub offset: [f32; 2],
     // this is required to avoid the following error:
@@ -91,15 +91,15 @@ struct OurStruct {
     pub padding: [f32; 2],
 }
 
-struct ObjectInfo {
+struct Scale {
     pub scale: f32,
-    pub buffer: Buffer,
-    pub bind_group: wgpu::BindGroup,
 }
 
 pub struct View<'a> {
     state: State<'a>,
-    object_infos: Vec<ObjectInfo>,
+    object_infos: Vec<Scale>,
+    scales_buffer: Buffer,
+    bind_group: BindGroup,
     render_pipeline: RenderPipeline,
 }
 
@@ -174,57 +174,59 @@ impl<'a> View<'a> {
             multiview: None,
         });
 
-        let mut object_infos = vec![];
-        for i in 0..100 {
-            let values = OurStruct {
+        let num_objects = 100;
+
+        let color_offset_size = std::mem::size_of::<ColorOffset>();
+        let color_offset_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(&format!("ColorOffsets buffer")),
+            size: (num_objects * color_offset_size) as BufferAddress,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let color_offsets = (0..num_objects).map(|_| {
+            ColorOffset {
                 color: [rand(0., 1.), rand(0., 1.), rand(0., 1.), 1.0],
                 offset: [rand(-0.9, 0.9), rand(-0.9, 0.9)],
                 padding: [0.0; 2],
-            };
-
-            let static_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(&format!("Static buffer[{i}]")),
-                size: std::mem::size_of::<OurStruct>() as BufferAddress,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            state.queue.write_buffer(&static_buffer, 0, bytemuck::cast_slice(&[values]));
-
+            }
+        }).collect::<Vec<_>>();
+        state.queue.write_buffer(&color_offset_buffer, 0, bytemuck::cast_slice(&color_offsets));
+        
+        let scales_size = std::mem::size_of::<[f32; 2]>();
+        let scales_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(&format!("Scales buffer")),
+            size: (num_objects * scales_size) as BufferAddress,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let object_infos = (0..num_objects).map(|_| {
             let scale = rand(0.2, 0.5);
-            let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(&format!("Dynamic buffer[{i}]")),
-                size: std::mem::size_of::<[f32; 2]>() as BufferAddress,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-
-            let bind_group = state.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some(&format!("OurStruct Bind Group[{i}]")),
-                layout: &render_pipeline.get_bind_group_layout(0),
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: static_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1, 
-                        resource: buffer.as_entire_binding()
-                    }
-                ],
-            });
-
-            object_infos.push(ObjectInfo {
+            Scale {
                 scale,
-                buffer,
-                bind_group,
-            });
-        }
+            }
+        }).collect::<Vec<_>>();
 
+        let bind_group = state.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(&format!("Triangles Bind Group")),
+            layout: &render_pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: color_offset_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: scales_buffer.as_entire_binding()
+                }
+            ],
+        });
 
         Self {
             state,
             object_infos,
             render_pipeline,
+            scales_buffer,
+            bind_group,
         }
     }
 
@@ -278,18 +280,17 @@ impl<'a> View<'a> {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-
+            
             let size = self.size();
             let aspect = size.width as f32 / size.height as f32;
-            for obj in &mut self.object_infos {
+            let scales = self.object_infos.iter().map(|obj| {
                 let s = obj.scale;
-                let scales = [s / aspect, s];
+                [s / aspect, s]
+            }).collect::<Vec<_>>();
+            self.state.queue.write_buffer(&self.scales_buffer, 0, bytemuck::cast_slice(&scales));
 
-                self.state.queue.write_buffer(&obj.buffer, 0, bytemuck::cast_slice(&[scales]));
-
-                render_pass.set_bind_group(0, &obj.bind_group, &[]);
-                render_pass.draw(0..3, 0..1);
-            }
+            render_pass.set_bind_group(0, &self.bind_group, &[]);
+            render_pass.draw(0..3, 0..100);
 
         }
 
