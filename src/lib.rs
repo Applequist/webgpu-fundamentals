@@ -114,7 +114,7 @@ impl<'a> View<'a> {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
@@ -123,7 +123,7 @@ impl<'a> View<'a> {
                 binding: 1,
                 visibility: wgpu::ShaderStages::VERTEX,
                 ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
@@ -183,18 +183,18 @@ impl<'a> View<'a> {
             };
 
             let static_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(&format!("Static uniform buffer[{i}]")),
+                label: Some(&format!("Static buffer[{i}]")),
                 size: std::mem::size_of::<OurStruct>() as BufferAddress,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
             state.queue.write_buffer(&static_buffer, 0, bytemuck::cast_slice(&[values]));
 
             let scale = rand(0.2, 0.5);
             let buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(&format!("Dynamic uniform buffer[{i}]")),
+                label: Some(&format!("Dynamic buffer[{i}]")),
                 size: std::mem::size_of::<[f32; 2]>() as BufferAddress,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
 

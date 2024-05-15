@@ -7,8 +7,8 @@ struct OtherStruct {
     scale: vec2f,
 };
 
-@group(0) @binding(0) var<uniform> ourStruct: OurStruct;
-@group(0) @binding(1) var<uniform> otherStruct: OtherStruct;
+@group(0) @binding(0) var<storage, read> ourStruct: OurStruct;
+@group(0) @binding(1) var<storage, read> otherStruct: OtherStruct;
 
 @vertex
 fn vs(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4f {

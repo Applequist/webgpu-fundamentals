@@ -52,3 +52,15 @@ When splitting our buffer, we run into a memory alignment issue for the first ti
 by adding padding.
 - [webgpu memory layout](https://webgpufundamentals.org/webgpu/lessons/webgpu-memory-layout.html)
 - [webgup alignment and size spec](https://www.w3.org/TR/WGSL/#alignment-and-size)
+
+## Storage Buffers
+
+In part 1 we simply change our uniform buffers into storage buffer, and see that it just works the same.
+
+So what's the difference ? And why we need these 2 types of buffers ?
+- Uniform buffers can be faster for their typical use-case, i.e. passing properties to draw the same objects.
+- Storage buffers can be much bigger (uniform min max size is 64k, storage buffer min max size is 128m)
+- Storage buffers can be read/write, uniform buffers are read only.
+
+
+
