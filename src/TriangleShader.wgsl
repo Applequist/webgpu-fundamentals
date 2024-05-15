@@ -7,8 +7,13 @@ struct Scales {
     scales: vec2f,
 };
 
+struct Vertex {
+    position: vec2f,
+}
+
 @group(0) @binding(0) var<storage, read> color_offsets: array<ColorOffset>;
 @group(0) @binding(1) var<storage, read> scales: array<Scales>;
+@group(0) @binding(2) var<storage, read> pos: array<Vertex>;
 
 struct VSOutput {
     @builtin(position) position: vec4f,
@@ -17,15 +22,11 @@ struct VSOutput {
 
 @vertex
 fn vs(@builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VSOutput {
-    let x = f32(1 - i32(vertex_index)) * 0.5;
-    let y = f32(i32(vertex_index & 1u) * 2 - 1) * 0.5;
-    let position = vec2f(x, y);
-
     let scales = scales[instance_index];
     let color_offset = color_offsets[instance_index];
 
     var vs_out: VSOutput;
-    vs_out.position = vec4f(position * scales.scales + color_offset.offset, 0.0, 1.0);
+    vs_out.position = vec4f(pos[vertex_index].position * scales.scales + color_offset.offset, 0.0, 1.0);
     vs_out.color = color_offset.color;
 
     return vs_out;

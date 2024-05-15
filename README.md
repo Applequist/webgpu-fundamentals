@@ -52,6 +52,7 @@ When splitting our buffer, we run into a memory alignment issue for the first ti
 by adding padding.
 - [webgpu memory layout](https://webgpufundamentals.org/webgpu/lessons/webgpu-memory-layout.html)
 - [webgup alignment and size spec](https://www.w3.org/TR/WGSL/#alignment-and-size)
+- [Shader Buffer Memory Layout Info](https://gist.github.com/teoxoy/936891c16c2a3d1c3c5e7204ac6cd76c)
 
 ## Storage Buffers
 
@@ -67,5 +68,18 @@ We create one storage buffer to store a color and the offset of each triangle *i
 to store the scales (x and y). This last buffer is fill in at render time.
 
 Also we issue a **single** draw call (with 100 instance) instead of 100 draw calls with a single instance in 
-uniform case (uniform part 3).
+uniform case (uniform part 3). An instance is like an **outer loop iteration**: for each instance, the draw call
+is going to execute the vertex shader once for each vertex (inner loop).
+
+In part 2, we indexed the storage buffer using the *instance_index*. 
+
+In part 3, we use a storage buffer to store vertex data, and use the *vertex_index* to index that buffer.
+We draw many colorful instances of circle: vertices for a **single*** circle are stored in storage buffer
+(indexed using the vertex_index in the vertex shader) whereas color and scale for each instance is drawn 
+from the uniform buffers indexed using the instance_index.
+
+Along the way, we refactor a bit to try to separate the resources required for a view and those required to draw
+some content.
+
+![colorful circles](screenshots/circle_instances.png)
 
