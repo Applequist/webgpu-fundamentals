@@ -1,7 +1,7 @@
 use std::default::Default;
 use std::f32::consts::PI;
 use std::sync::Arc;
-use wgpu::{BindGroup, Buffer, BufferAddress, Device, DeviceDescriptor, include_wgsl, InstanceDescriptor, PowerPreference, Queue, RenderPipeline, RequestAdapterOptions, Surface, SurfaceConfiguration};
+use wgpu::{Buffer, BufferAddress, Device, DeviceDescriptor, include_wgsl, InstanceDescriptor, PowerPreference, Queue, RenderPipeline, RequestAdapterOptions, Surface, SurfaceConfiguration, VertexAttribute, VertexFormat, VertexStepMode};
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
 use winit::window::Window;
@@ -116,10 +116,6 @@ impl<'a> State<'a> {
 struct ColorOffset {
     pub color: [f32; 4],
     pub offset: [f32; 2],
-    // this is required to avoid the following error:
-    // 'Buffer is bound with size 24 where the shader expects 32 in group[0] compact index 0'
-    // See https://sotrh.github.io/learn-wgpu/showcase/alignment/#alignment-of-uniform-and-storage-buffers
-    pub padding: [f32; 2],
 }
 
 struct Scale {
@@ -127,38 +123,38 @@ struct Scale {
 }
 
 pub struct CircleLayer {
+    vertices: Vec<Vertex>,
+    vertex_buffer: Buffer,
+    color_offset_buffer: Buffer,
     object_infos: Vec<Scale>,
     scales_buffer: Buffer,
-    vertices: Vec<Vertex>,
-    bind_group: BindGroup,
 }
 
 impl CircleLayer {
-    pub fn new(state: &State, pass: &ViewRenderPass) -> Self {
+    pub fn new(state: &State) -> Self {
 
         let num_objects = 100;
 
         let color_offset_size = std::mem::size_of::<ColorOffset>();
         let color_offset_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some(&format!("ColorOffsets buffer")),
+            label: Some("ColorOffsets buffer"),
             size: (num_objects * color_offset_size) as BufferAddress,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let color_offsets = (0..num_objects).map(|_| {
             ColorOffset {
                 color: [rand(0., 1.), rand(0., 1.), rand(0., 1.), 1.0],
                 offset: [rand(-0.9, 0.9), rand(-0.9, 0.9)],
-                padding: [0.0; 2],
             }
         }).collect::<Vec<_>>();
         state.queue.write_buffer(&color_offset_buffer, 0, bytemuck::cast_slice(&color_offsets));
 
         let scales_size = std::mem::size_of::<[f32; 2]>();
         let scales_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some(&format!("Scales buffer")),
+            label: Some("Scales buffer"),
             size: (num_objects * scales_size) as BufferAddress,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let object_infos = (0..num_objects).map(|_| {
@@ -173,35 +169,17 @@ impl CircleLayer {
         let vertex_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Circle Vertex Buffer"),
             size: (vertices.len() * std::mem::size_of::<Vertex>()) as BufferAddress,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         state.queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&vertices));
         
-        let bind_group = state.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some(&format!("Circle Bind Group")),
-            layout: &pass.render_pipeline.get_bind_group_layout(0),
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: color_offset_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: scales_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: vertex_buffer.as_entire_binding(),
-                }
-            ],
-        });
-        
         Self {
+            vertices,
+            vertex_buffer,
+            color_offset_buffer,
             object_infos,
             scales_buffer,
-            vertices,
-            bind_group,
         }
     }
 }
@@ -215,45 +193,9 @@ impl ViewRenderPass {
     pub fn new(label: String, state: &State) -> Self {
         let shader = state.device.create_shader_module(include_wgsl!("TriangleShader.wgsl"));
 
-        let our_struct_bg_layout = state.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("OurStruct Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }, 
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }
-            ],
-        });
-
         let render_pipeline_layout = state.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&our_struct_bg_layout],
+            bind_group_layouts: &[],
             push_constant_ranges: &[],
         });
 
@@ -264,7 +206,46 @@ impl ViewRenderPass {
                 module: &shader,
                 compilation_options: Default::default(),
                 entry_point: "vs",
-                buffers: &[],
+                buffers: &[
+                    wgpu::VertexBufferLayout {
+                        array_stride: 2 * 4,
+                        step_mode: VertexStepMode::Vertex,
+                        attributes: &[
+                            VertexAttribute {
+                                shader_location: 0,
+                                offset: 0,
+                                format: VertexFormat::Float32x2,
+                            }
+                        ],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: 6 * 4,
+                        step_mode: VertexStepMode::Instance,
+                        attributes: &[
+                            VertexAttribute {
+                                shader_location: 1,
+                                offset: 0,
+                                format: VertexFormat::Float32x4,
+                            },
+                            VertexAttribute {
+                                shader_location: 2,
+                                offset: 16,
+                                format: VertexFormat::Float32x2,
+                            }
+                        ]
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: 2 * 4,
+                        step_mode: VertexStepMode::Instance,
+                        attributes: &[
+                            VertexAttribute {
+                                shader_location: 3,
+                                offset: 0, 
+                                format: VertexFormat::Float32x2,
+                            }
+                        ]
+                    }
+                ],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -313,7 +294,7 @@ impl<'a> View<'a> {
 
         let passes = vec![ViewRenderPass::new("Basic View Render Pass".into(), &state)];
 
-        let layers = vec![CircleLayer::new(&state, &passes[0])];
+        let layers = vec![CircleLayer::new(&state)];
         Self {
             state,
             passes,
@@ -325,6 +306,11 @@ impl<'a> View<'a> {
         self.state.size()
     }
 
+    pub fn aspect_ratio(&self) -> f32 {
+        let size = self.size();
+        size.width as f32 / size.height as f32
+    }
+    
     /// Reconfigure the [State] whenever the window has been resized.
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         self.state.resize(new_size);
@@ -375,15 +361,16 @@ impl<'a> View<'a> {
                 render_pass.set_pipeline(&pass.render_pipeline);
 
                 for layer in &self.layers {
-                    let size = self.size();
-                    let aspect = size.width as f32 / size.height as f32;
+                    let aspect = self.aspect_ratio();
                     let scales = layer.object_infos.iter().map(|obj| {
                         let s = obj.scale;
                         [s / aspect, s]
                     }).collect::<Vec<_>>();
                     self.state.queue.write_buffer(&layer.scales_buffer, 0, bytemuck::cast_slice(&scales));
 
-                    render_pass.set_bind_group(0, &layer.bind_group, &[]);
+                    render_pass.set_vertex_buffer(0, layer.vertex_buffer.slice(..));
+                    render_pass.set_vertex_buffer(1, layer.color_offset_buffer.slice(..));
+                    render_pass.set_vertex_buffer(2, layer.scales_buffer.slice(..));
                     render_pass.draw(0..layer.vertices.len() as u32, 0..100);
                 }
             }

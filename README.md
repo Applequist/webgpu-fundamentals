@@ -83,3 +83,18 @@ some content.
 
 ![colorful circles](screenshots/circle_instances.png)
 
+## Vertex Buffers
+
+Although passing vertex data in storage buffers is getting more popular, the *traditional way* is to use 
+vertex buffer which are similar to storage buffers but offer a *higher level* API: 
+- the data stored in a Vertex buffer is described using attributes and 
+  data is pulled out of the buffer and handed over to the vertex shader directly,
+- Attributes describe the shader location (`@location(0)`), the start offset in the buffer, and the format (`float32x2`).
+
+Also vertex buffers are not part of a bind group, instead they must be *declared* in the vertex stage of a render pipeline
+and set on a render pass (`pass.setVertexBuffer(vbuff)`).
+
+In part 1, we use a vertex buffer to store our circle vertices. These are reused for each instance.
+
+In part2, we store per instance color and offset into a 2nd vertex buffer, and per instance scales in a 3rd. 
+Both these buffers use a **per instance step mode**.
