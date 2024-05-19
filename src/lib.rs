@@ -11,6 +11,7 @@ use winit::window::Window;
 pub struct Vertex {
     x: f32,
     y: f32,
+    color: [u8; 4], // need array of 4 to satisfy bytemuck Pod's requirements.
 }
 
 /// Create a circle (or ring) vertices.
@@ -21,6 +22,9 @@ pub fn create_circle_vertices(
     end_angle: f32,
     num_subdivision: usize,
 ) -> Vec<Vertex> {
+    let inner_color: [u8; 4] = [255; 4];
+    let outer_color: [u8; 4] = [25, 25, 25, 255];
+    
     (0..num_subdivision).flat_map(|i|  {
         let angle1: f32 = start_angle + (i + 0) as f32 * (end_angle - start_angle) / num_subdivision as f32;
         let angle2 = start_angle + (i + 1) as f32 * (end_angle - start_angle) / num_subdivision as f32;
@@ -29,16 +33,88 @@ pub fn create_circle_vertices(
         let (s2, c2) = angle2.sin_cos();
 
         vec![
-            Vertex { x: c1 * radius, y: s1 * radius },
-            Vertex { x: c2 * radius, y: s2 * radius },
-            Vertex { x: c1 * inner_radius, y: s1 * inner_radius },
-            Vertex { x: c1 * inner_radius, y: s1 * inner_radius },
-            Vertex { x: c2 * radius, y: s2 * radius },
-            Vertex { x: c2 * inner_radius, y: s2 * inner_radius },
+            Vertex { x: c1 * radius, y: s1 * radius, color: outer_color },
+            Vertex { x: c2 * radius, y: s2 * radius, color: outer_color },
+            Vertex { x: c1 * inner_radius, y: s1 * inner_radius, color: inner_color },
+            Vertex { x: c1 * inner_radius, y: s1 * inner_radius, color: inner_color },
+            Vertex { x: c2 * radius, y: s2 * radius, color: outer_color },
+            Vertex { x: c2 * inner_radius, y: s2 * inner_radius, color: inner_color },
         ]
     }).collect()
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct ColorOffset {
+    pub color: [u8; 4],
+    pub offset: [f32; 2],
+}
+
+struct Scale {
+    pub scale: f32,
+}
+
+pub struct CircleLayer {
+    vertices: Vec<Vertex>,
+    vertex_buffer: Buffer,
+    color_offset_buffer: Buffer,
+    object_infos: Vec<Scale>,
+    scales_buffer: Buffer,
+}
+
+impl CircleLayer {
+    pub fn new(state: &State) -> Self {
+
+        let num_objects = 100;
+
+        let color_offset_size = std::mem::size_of::<ColorOffset>();
+        let color_offset_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("ColorOffsets buffer"),
+            size: (num_objects * color_offset_size) as BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let color_offsets = (0..num_objects).map(|_| {
+            ColorOffset {
+                color: [(rand(0., 1.) * 255.) as u8, (rand(0., 1.) * 255.) as u8, (rand(0., 1.) * 255.) as u8, 255],
+                offset: [rand(-0.9, 0.9), rand(-0.9, 0.9)],
+            }
+        }).collect::<Vec<_>>();
+        state.queue.write_buffer(&color_offset_buffer, 0, bytemuck::cast_slice(&color_offsets));
+
+        let scales_size = std::mem::size_of::<[f32; 2]>();
+        let scales_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Scales buffer"),
+            size: (num_objects * scales_size) as BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let object_infos = (0..num_objects).map(|_| {
+            let scale = rand(0.2, 0.5);
+            Scale {
+                scale,
+            }
+        }).collect::<Vec<_>>();
+
+        let vertices = create_circle_vertices(0.25, 0.5, 0., 2. * PI, 24);
+
+        let vertex_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Circle Vertex Buffer"),
+            size: (vertices.len() * std::mem::size_of::<Vertex>()) as BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        state.queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+
+        Self {
+            vertices,
+            vertex_buffer,
+            color_offset_buffer,
+            object_infos,
+            scales_buffer,
+        }
+    }
+}
 pub struct State<'a> {
     surface: Surface<'a>,
     device: Device,
@@ -111,78 +187,6 @@ impl<'a> State<'a> {
     }
 }
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct ColorOffset {
-    pub color: [f32; 4],
-    pub offset: [f32; 2],
-}
-
-struct Scale {
-    pub scale: f32,
-}
-
-pub struct CircleLayer {
-    vertices: Vec<Vertex>,
-    vertex_buffer: Buffer,
-    color_offset_buffer: Buffer,
-    object_infos: Vec<Scale>,
-    scales_buffer: Buffer,
-}
-
-impl CircleLayer {
-    pub fn new(state: &State) -> Self {
-
-        let num_objects = 100;
-
-        let color_offset_size = std::mem::size_of::<ColorOffset>();
-        let color_offset_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("ColorOffsets buffer"),
-            size: (num_objects * color_offset_size) as BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let color_offsets = (0..num_objects).map(|_| {
-            ColorOffset {
-                color: [rand(0., 1.), rand(0., 1.), rand(0., 1.), 1.0],
-                offset: [rand(-0.9, 0.9), rand(-0.9, 0.9)],
-            }
-        }).collect::<Vec<_>>();
-        state.queue.write_buffer(&color_offset_buffer, 0, bytemuck::cast_slice(&color_offsets));
-
-        let scales_size = std::mem::size_of::<[f32; 2]>();
-        let scales_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Scales buffer"),
-            size: (num_objects * scales_size) as BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let object_infos = (0..num_objects).map(|_| {
-            let scale = rand(0.2, 0.5);
-            Scale {
-                scale,
-            }
-        }).collect::<Vec<_>>();
-
-        let vertices = create_circle_vertices(0.25, 0.5, 0., 2. * PI, 24);
-
-        let vertex_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Circle Vertex Buffer"),
-            size: (vertices.len() * std::mem::size_of::<Vertex>()) as BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        state.queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&vertices));
-        
-        Self {
-            vertices,
-            vertex_buffer,
-            color_offset_buffer,
-            object_infos,
-            scales_buffer,
-        }
-    }
-}
 
 pub struct ViewRenderPass {
     label: String,
@@ -208,28 +212,33 @@ impl ViewRenderPass {
                 entry_point: "vs",
                 buffers: &[
                     wgpu::VertexBufferLayout {
-                        array_stride: 2 * 4,
+                        array_stride: 3 * 4,
                         step_mode: VertexStepMode::Vertex,
                         attributes: &[
                             VertexAttribute {
-                                shader_location: 0,
+                                shader_location: 0, // position
                                 offset: 0,
                                 format: VertexFormat::Float32x2,
+                            },
+                            VertexAttribute {
+                                shader_location :4, // per_vertex_color
+                                offset: 2 * 4,
+                                format: VertexFormat::Unorm8x4,
                             }
                         ],
                     },
                     wgpu::VertexBufferLayout {
-                        array_stride: 6 * 4,
+                        array_stride: 3 * 4,
                         step_mode: VertexStepMode::Instance,
                         attributes: &[
                             VertexAttribute {
-                                shader_location: 1,
+                                shader_location: 1, // color
                                 offset: 0,
-                                format: VertexFormat::Float32x4,
+                                format: VertexFormat::Unorm8x4,
                             },
                             VertexAttribute {
-                                shader_location: 2,
-                                offset: 16,
+                                shader_location: 2, // offset
+                                offset: 4,
                                 format: VertexFormat::Float32x2,
                             }
                         ]
@@ -239,7 +248,7 @@ impl ViewRenderPass {
                         step_mode: VertexStepMode::Instance,
                         attributes: &[
                             VertexAttribute {
-                                shader_location: 3,
+                                shader_location: 3, // scales
                                 offset: 0, 
                                 format: VertexFormat::Float32x2,
                             }

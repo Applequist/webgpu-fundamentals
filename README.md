@@ -98,3 +98,7 @@ In part 1, we use a vertex buffer to store our circle vertices. These are reused
 
 In part2, we store per instance color and offset into a 2nd vertex buffer, and per instance scales in a 3rd. 
 Both these buffers use a **per instance step mode**.
+
+In part 3, we add a per vertex color.
+
+![shaded_colorful_circles](screenshots/vertex_buffer_part3.png)
