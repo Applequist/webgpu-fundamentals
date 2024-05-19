@@ -102,3 +102,6 @@ Both these buffers use a **per instance step mode**.
 In part 3, we add a per vertex color.
 
 ![shaded_colorful_circles](screenshots/vertex_buffer_part3.png)
+
+In part 4, we use an index buffer to save some memory.
+Note that 

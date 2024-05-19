@@ -1,7 +1,7 @@
 use std::default::Default;
 use std::f32::consts::PI;
 use std::sync::Arc;
-use wgpu::{Buffer, BufferAddress, Device, DeviceDescriptor, include_wgsl, InstanceDescriptor, PowerPreference, Queue, RenderPipeline, RequestAdapterOptions, Surface, SurfaceConfiguration, VertexAttribute, VertexFormat, VertexStepMode};
+use wgpu::{Buffer, BufferAddress, Device, DeviceDescriptor, include_wgsl, IndexFormat, InstanceDescriptor, PowerPreference, Queue, RenderPipeline, RequestAdapterOptions, Surface, SurfaceConfiguration, VertexAttribute, VertexFormat, VertexStepMode};
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
 use winit::window::Window;
@@ -21,26 +21,30 @@ pub fn create_circle_vertices(
     start_angle: f32, 
     end_angle: f32,
     num_subdivision: usize,
-) -> Vec<Vertex> {
+) -> (Vec<Vertex>, Vec<u32>) {
     let inner_color: [u8; 4] = [255; 4];
     let outer_color: [u8; 4] = [25, 25, 25, 255];
-    
-    (0..num_subdivision).flat_map(|i|  {
-        let angle1: f32 = start_angle + (i + 0) as f32 * (end_angle - start_angle) / num_subdivision as f32;
-        let angle2 = start_angle + (i + 1) as f32 * (end_angle - start_angle) / num_subdivision as f32;
 
-        let (s1, c1) = angle1.sin_cos();
-        let (s2, c2) = angle2.sin_cos();
+    let vertices: Vec<Vertex> = (0..=num_subdivision).flat_map(|i| {
+        let angle: f32 = start_angle + (i + 0) as f32 * (end_angle - start_angle) / num_subdivision as f32;
+
+        let (s1, c1) = angle.sin_cos();
 
         vec![
             Vertex { x: c1 * radius, y: s1 * radius, color: outer_color },
-            Vertex { x: c2 * radius, y: s2 * radius, color: outer_color },
             Vertex { x: c1 * inner_radius, y: s1 * inner_radius, color: inner_color },
-            Vertex { x: c1 * inner_radius, y: s1 * inner_radius, color: inner_color },
-            Vertex { x: c2 * radius, y: s2 * radius, color: outer_color },
-            Vertex { x: c2 * inner_radius, y: s2 * inner_radius, color: inner_color },
         ]
-    }).collect()
+    }).collect();
+    dbg!(vertices.len());
+    
+    let indices: Vec<u32> = (0..num_subdivision as u32).flat_map(|i| {
+        let offset = i * 2;
+        vec![offset, offset + 1, offset + 2, offset + 2, offset + 1, offset + 3]
+    }).collect();
+    dbg!(indices.len());
+    dbg!(indices.iter().min());
+    dbg!(indices.iter().max());
+    (vertices, indices)
 }
 
 #[repr(C)]
@@ -55,8 +59,8 @@ struct Scale {
 }
 
 pub struct CircleLayer {
-    vertices: Vec<Vertex>,
     vertex_buffer: Buffer,
+    index_buffer: Buffer,
     color_offset_buffer: Buffer,
     object_infos: Vec<Scale>,
     scales_buffer: Buffer,
@@ -96,7 +100,7 @@ impl CircleLayer {
             }
         }).collect::<Vec<_>>();
 
-        let vertices = create_circle_vertices(0.25, 0.5, 0., 2. * PI, 24);
+        let (vertices, indices) = create_circle_vertices(0.25, 0.5, 0., 2. * PI, 24);
 
         let vertex_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Circle Vertex Buffer"),
@@ -105,10 +109,19 @@ impl CircleLayer {
             mapped_at_creation: false,
         });
         state.queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+        
+        let index_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Circle Index Buffer"),
+            size: (indices.len() * std::mem::size_of::<u32>()) as BufferAddress,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        state.queue.write_buffer(&index_buffer, 0, bytemuck::cast_slice(&indices));
+        
 
         Self {
-            vertices,
             vertex_buffer,
+            index_buffer,
             color_offset_buffer,
             object_infos,
             scales_buffer,
@@ -269,7 +282,7 @@ impl ViewRenderPass {
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
+                front_face: wgpu::FrontFace::Cw,
                 cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
@@ -380,7 +393,8 @@ impl<'a> View<'a> {
                     render_pass.set_vertex_buffer(0, layer.vertex_buffer.slice(..));
                     render_pass.set_vertex_buffer(1, layer.color_offset_buffer.slice(..));
                     render_pass.set_vertex_buffer(2, layer.scales_buffer.slice(..));
-                    render_pass.draw(0..layer.vertices.len() as u32, 0..100);
+                    render_pass.set_index_buffer(layer.index_buffer.slice(..), IndexFormat::Uint32);
+                    render_pass.draw_indexed(0..144_u32, 0, 0..100);
                 }
             }
 
