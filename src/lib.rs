@@ -31,8 +31,8 @@ pub fn create_circle_vertices(
         let (s1, c1) = angle.sin_cos();
 
         vec![
-            Vertex { x: c1 * radius, y: s1 * radius, color: outer_color },
             Vertex { x: c1 * inner_radius, y: s1 * inner_radius, color: inner_color },
+            Vertex { x: c1 * radius, y: s1 * radius, color: outer_color },
         ]
     }).collect();
     dbg!(vertices.len());
@@ -282,7 +282,7 @@ impl ViewRenderPass {
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: wgpu::FrontFace::Cw,
+                front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
