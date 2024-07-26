@@ -104,4 +104,18 @@ In part 3, we add a per vertex color.
 ![shaded_colorful_circles](screenshots/vertex_buffer_part3.png)
 
 In part 4, we use an index buffer to save some memory.
-Note that 
+
+## Textures
+
+We have seen diferent ways to pass data into shaders: 
+- [inter-stage variables](#inter-stage-variables)
+- [uniforms](#uniforms)
+- [storage buffers](#storage-buffers)
+- and [vertex buffers](#vertex-buffers)
+
+Why do we need textures? Can't we use a storage buffer as a 2d array?
+What make textures special is that they can be access by special hardware called **sampler** 
+that can read up to 16 values in the texture and **blend** them in many useful ways.
+
+We access textures via texture coordinates which go from 0.0 to 1.0 left to right and top to bottom
+regardless of the size of the texture.
