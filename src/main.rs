@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use webgpu_fundamentals::View;
+use winit::window::WindowId;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
-use winit::window::WindowId;
-use webgpu_fundamentals::{View};
 
 #[derive(Default)]
 pub struct App<'a> {
@@ -16,9 +16,11 @@ pub struct App<'a> {
 
 impl<'a> ApplicationHandler for App<'a> {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let window = Arc::new(event_loop
+        let window = Arc::new(
+            event_loop
                 .create_window(Window::default_attributes())
-                .unwrap());
+                .unwrap(),
+        );
         let view = View::new(Arc::clone(&window));
         self.windows.insert(window.id(), (window, view));
     }
@@ -34,24 +36,24 @@ impl<'a> ApplicationHandler for App<'a> {
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping...");
                 event_loop.exit();
-            },
+            }
             WindowEvent::Resized(new_size) => {
                 view.resize(new_size);
-            },
+            }
             WindowEvent::RedrawRequested => {
                 view.update();
                 match view.render() {
                     Ok(_) => {}
                     Err(wgpu::SurfaceError::Lost) => {
                         view.resize(view.size());
-                    },
+                    }
                     Err(wgpu::SurfaceError::OutOfMemory) => {
                         eprintln!("Out of Memory Error: exiting...");
                         event_loop.exit();
-                    },
+                    }
                     Err(e) => eprint!("{:?}", e),
                 }
-            },
+            }
             _ => (),
         }
     }
